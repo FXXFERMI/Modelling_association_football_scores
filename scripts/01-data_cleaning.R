@@ -5,11 +5,12 @@
 # Contact: fermi.fei@mail.utoronto.ca
 # License: MIT
 # Pre-requisites: The 'tidyverse' package, specifically for data manipulation and writing the cleaned data to a new CSV file.
-# Any other information needed? Make sure the raw data file is located at 'data/raw_data/raw_data.csv' before running this script.
+# Any other information needed? Make sure the raw data file is located at 'data/raw_data/Bundesliga_2023-2024.csv' before running this script.
 
 #### Workspace setup ####
 library(tidyverse)
 library(here)
+
 #### Clean data ####
 # Load the raw data from a CSV file.
 raw_score <- read_csv("data/raw_data/Bundesliga_2023-2024.csv")
