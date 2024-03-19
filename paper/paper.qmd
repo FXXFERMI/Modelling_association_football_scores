@@ -1,0 +1,185 @@
+---
+title: "From Touches to Goals: Modeling the Efficacy of Possession in Football"
+subtitle: "Evaluating Poisson vs. Negative Binomial Models in Predicting Home Team Success"
+author: 
+  - Siqi Fei
+thanks: "Code and data are available at: <https://github.com/FXXFERMI/Modelling_association_football_scores.git>."
+date: "March 18, 2024"
+date-format: long
+abstract: "This study delves into the intricate relationship between a football team's ball possession, as indicated by the number of times players touch the ball, and the team's scoring success. Through rigorous statistical analysis, we compared Poisson and negative binomial regression models to assess which better predicts the final score based on possession data. Our findings revealed a nuanced connection where more ball possession does not always equate to higher scores, challenging common football assumptions. The implications of this research extend beyond sports analytics, providing insights into the complex dynamics of performance metrics and their interpretation, thereby enriching the strategic understanding of team sports."
+format: pdf
+number-sections: true
+toc: true
+bibliography: references.bib
+header-includes:
+  \usepackage{placeins}
+---
+
+# Introduction
+
+Football is the world's most popular sport, with a vast audience and professionals across the globe. Germany, with its reputation for football excellence, hosts the Bundesliga every year. Bundesliga is a league that draws global attention due to its high level of competition and skill. The data from this league is highly regarded for the precision and dependability, making it ideal for in-depth analysis. In this study, we examine data from the Bundesliga season 2023-2024 to better understand the outcomes of matches, particularly how ball possession relates to scoring goals.
+
+This study uses data from Kaggle for the year 2024 [@bundesliga_dataset_2024], applies Poisson and negative binomial regression models to closely examine the link between how often home team players have the ball and the number of goals they score. The aim is to see how keeping the ball influences the team's ability to score.
+
+Echoing Maher's article [@Maher1982], which instead of rejecting the Poisson model for football scores, further explored it by considering how well teams attack and defend, our study revisits these models with newest Bundesliga data. We're comparing the Poisson and the Negative Binomial models to figure out which one better reflects the number of goals in current football games. Through our analysis with the latest data, we aim to uncover which model truly captures the scoring trends in football today
+
+Our paper outlines the importance of analyzing match data, how we did our study, what we found, and why it's important. We show how our findings help us better understand football and its scores. Our research offers new insights for coaches, players, and anyone interested in the science behind the sport.
+
+```{r}
+#| include: false
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(rstanarm)
+library(here)
+library(ggplot2)
+library(modelsummary)
+library(knitr)
+```
+
+# Data
+
+For this paper, we used data from the Kaggle 2024 Bundesliga Complete Season Analysis [@bundesliga_dataset_2024], which we worked with in R [@citeR], a language for statistical computing. The `tidyverse` suite [@citetidyverse], with its various packages like `ggplot2` [@citeggplot], `dplyr` [@citedplyr], `readr` [@citereadr], and `tibble` [@citetibble], made handling the data easier and more precise. We summarized our data results using `knitr` package [@citeknitr] and model results using the `modelsummary` package [@citemodelsummary]. The `here` package [@citehere] helped keep our files organized and our analysis reproducible.
+
+```{r}
+#| include: false
+#| warning: false
+#| message: false
+score <- read_csv(here("data/analysis_data/analysis_data.csv"))
+```
+
+## Data Measurement
+
+In our study, the measurement of data plays a pivotal role in understanding the dynamics of football matches within the Bundesliga. We focus on three main data points: Home Team, Final Score of the Home Team and Number of Times the Home Team Players Touched the Ball. There are 63 observations in the raw dataset, before analyzing, we thoroughly clean our data by removing non-essential information. 59 observations remains in our study. 
+
+The @fig-touch presents a statistical overview of the average number of times each Bundesliga team's players touched the ball at home games (denoted as "avg_touch") along with the variance of these touches (denoted as "var_touch"). These two factors provide insights into the teams' playing style and control of the game when they are on familiar ground. A higher average suggests a team that often maintains possession, potentially indicating a dominant play style. Conversely, high variance can imply inconsistency in possession, suggesting that the team's control over the ball fluctuates significantly from game to game.
+
+```{r}
+#| label: fig-touch
+#| fig-cap: The Mean and Variance of Number of Times the Home Team Players Touched the Ball
+#| echo: false
+#| warning: false
+#| message: false
+score_summary <- score |>
+  group_by(Home) |>
+  summarise(avg_touch = mean(Touches_x),
+            var_touch = var(Touches_x))
+kable(score_summary)
+```
+
+The @fig-score shifts focus to the outcomes of the home team's efforts, showcasing the mean and variance of the final scores across the same span of seasons. The mean of the final scores (denoted as "avg_score") offers a direct indicator of a team's offensive effectiveness, while the variance(denoted as "var_score") gives us an understanding of their scoring consistency. Teams with a high average score are generally seen as strong offensive teams, and those with low variance in scores are typically more predictable in their scoring performance. Together, these statistics paint a picture of the attacking prowess and reliability of each team in the Bundesliga during home matches.
+
+```{r}
+#| label: fig-score
+#| fig-cap: The Mean and Variance of Final Score of the Home Team
+#| echo: false
+#| warning: false
+#| message: false
+score_summary_2 <- score |>
+  group_by(Home) |>
+  summarise(avg_score = mean(Score_x),
+            var_score = var(Score_x))
+
+kable(score_summary_2)
+```
+
+## Data Distribution
+
+@fig-relationship visualizes the relationship between the number of times the home team players touched the ball and the final score achieved by the home team in a selection of football matches. From the distribution of data points, it appears that there isn't a straightforward linear correlation between these two factors. While we might expect more ball touches to correlate with more goals, the data does not show a consistent trend supporting this.
+
+The points are relatively scattered, suggesting that while ball possession (as indicated by touches) is an important aspect of the game, it does not directly guarantee more goals. This could indicate that other factors, such as the quality of touches, team strategy, defensive strength of the opposition, and effectiveness in the final third, also play critical roles in converting possession into goals.
+
+```{r}
+#| label: fig-relationship
+#| fig-cap: The Relationship between Home Team Score and Number of Times Touched the Ball
+#| echo: false
+#| warning: false
+#| message: false
+# Create a scatter plot
+ggplot(data = score, aes(x = Touches_x, y = Score_x)) +
+  geom_point() +
+  labs(x = "Number of Times the Home Team Players Touched the Ball", y = "Final Score of the Home Team",
+       title = "Relationship between Home Team Score and Number of Times Touched the Ball") +
+  theme_minimal()
+```
+
+# Model
+
+## Model set-up
+
+We run the model in R [@citeR] using the `rstanarm` package of [@rstanarm]. We use the default priors from `rstanarm`.
+
+## Model Application and Findings
+
+In our analysis, we applied both Poisson and negative binomial regression models to explore the relationship between the number of times the home team players touched the ball and the final score of the home team. @tbl-modelresults presents the estimated coefficients from both models, which are remarkably similar, indicating that each additional touch of the ball is associated with a very slight increase in the expected number of goals scored.
+
+
+## Comparative Model Performance
+
+The similarities between the Poisson and negative binomial models, as shown in @tbl-modelresults, also extend to the metrics used to evaluate model fit and predictive accuracy—namely, the Log Likelihood, ELPD (Expected Log Pointwise Predictive Density), LOOIC (Leave-One-Out Cross-Validation Information Criterion), WAIC (Watanabe-Akaike Information Criterion), and RMSE (Root Mean Square Error). All these metrics suggest nearly identical performance of the two models on our dataset, with no significant differences.
+
+```{r}
+#| echo: false
+#| eval: true
+#| warning: false
+#| message: false
+
+# read model
+touch_score_poisson <-
+  readRDS(file = here::here("models/poisson_scores.rds"))
+
+touch_score_neg_binomial <-
+  readRDS(file = here::here("models/neg_binomial_scores.rds"))
+```
+
+
+```{r}
+#| echo: false
+#| label: tbl-modelresults
+#| tbl-cap: "Modeling the relationship between Number of Times the Home Team Players Touched the Ball and Final Score of the Home Team"
+#| warning: false
+
+modelsummary(
+  list(
+    "Poisson" = touch_score_poisson ,
+    "Negative Binomial" = touch_score_neg_binomial
+  )
+)
+```
+
+## Posterior Predictive Checks
+
+@fig-ppcheckpoissonvsbinomial compares the posterior predictive checks for both models. These checks allow us to visually assess how well our models' predictions match the observed data. The overlap of the predicted values (in blue) around the observed values (in black) appears similar across both models, with neither showing a distinct advantage in capturing the distribution of the observed scores.
+
+```{r}
+#| echo: false
+#| eval: true
+#| message: false
+#| warning: false
+#| label: fig-ppcheckpoissonvsbinomial
+#| layout-ncol: 2
+#| fig-cap: "Comparing posterior prediction checks for Poisson and negative binomial models"
+#| fig-subcap: ["Poisson model", "Negative binomial model"]
+
+pp_check(touch_score_poisson) +
+  theme(legend.position = "bottom")
+
+
+pp_check(touch_score_neg_binomial) +
+  theme(legend.position = "bottom")
+```
+The choice between using a Poisson or a negative binomial regression often comes down to the data's dispersion. The Poisson regression assumes the mean and variance of the count data are equal (equidispersion), while the negative binomial model allows for variance to exceed the mean (overdispersion), which is often more realistic in real-world scenarios such as football scoring. Despite this theoretical difference, our analysis indicates that both models performed similarly on our specific dataset, perhaps due to a lack of overdispersion in the data or other dataset-specific characteristics.
+
+
+# Result
+
+When choosing the best model to analyze football match data, like the number of times players touch the ball and how many goals they score, we have to look closely at how spread out the scores usually are. The Poisson model is the simpler one and is based on the idea that the average number of goals scored is around the same as how much the scores vary from game to game. However, real match scores can often vary a lot more than that, which is why the negative binomial model is usually thought to be more flexible—it can handle data where the scores vary widely.
+
+Our study put these two models to the test using Bundesliga match data to see if more ball touches by the home team really lead to more goals. What we discovered was that touching the ball more often didn't really increase the team's chances of scoring by much, no matter which model we used. What was unexpected was that the negative binomial model, which many analysts and researchers prefer for football data, didn't give us better results than the Poisson model. This was surprising because it didn't seem to matter that the scores varied—both models ended up being equally useful.
+
+Our research gives us new insights into predicting football scores and suggests that the difference between the Poisson and negative binomial models might not be as clear-cut as we thought. This finding challenges some usual beliefs in sports analytics and shows how important it is to choose the right model based on the actual data we have.
+
+\newpage
+
+# References
